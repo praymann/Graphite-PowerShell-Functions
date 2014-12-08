@@ -152,10 +152,49 @@ Function Start-StatsToGraphite
                     Write-Verbose "Filtering out Sample Name: $($samplePath) as it matches something in the filters."
                 }
 
+                if ($Config.Counters -match "DHCP") 
+                {
+                    $subnets = @()
+
+                    ForEach ( $match in netsh dhcp server show mibinfo | Select-String 'Subnet =' -Context 0,3 ) {
+                        
+                        $subnet = New-Object System.Object
+                        $name = $match.Line.ToString().Split("=").Trim()[1] -replace ".$" -replace "\.",'_'
+                        $subnet | Add-Member -MemberType NoteProperty -Name Name -Value $name
+                        
+                        $inuse = $match.Context | Select-Object -ExpandProperty PostContext | Select-String use
+                        $inuse = $inuse.ToString().Split("=").Trim()[1] -replace ".$" -as [int]
+                        $subnet | Add-Member -MemberType NoteProperty -Name InUse -Value $inuse
+                        
+                        $free = $match.Context | Select-Object -ExpandProperty PostContext | Select-String free
+                        $free = $free.ToString().Split("=").Trim()[1] -replace ".$" -as [int]
+                        $subnet | Add-Member -MemberType NoteProperty -Name Free -Value $free
+                        
+                        $offers = $match.Context | Select-Object -ExpandProperty PostContext | Select-String offers
+                        $offers = $offers.ToString().Split("=").Trim()[1] -replace ".$" -as [int]
+                        $subnet | Add-Member -MemberType NoteProperty -Name PendingOffers -Value $offers
+                        
+                        $subnets += $subnet
+                    }
+
+                    ForEach ( $subnet in $subnets ) {
+                        
+                        $metricPath = $Config.MetricPath + '.' + $Config.NodeHostName.ToLower() + '.' + 'dhcpusage' + '.' + $subnet.Name + '.' + 'free'
+                        $metricsToSend[$metricPath] = $subnet.Free
+                        
+                        $metricPath = $Config.MetricPath + '.' + $Config.NodeHostName.ToLower() + '.' + 'dhcpusage' + '.' + $subnet.Name + '.' + 'inuse'
+                        $metricsToSend[$metricPath] = $subnet.InUse
+                        
+                        $metricPath = $Config.MetricPath + '.' + $Config.NodeHostName.ToLower() + '.' + 'dhcpusage' + '.' + $subnet.Name + '.' + 'pendingoffers'
+                        $metricsToSend[$metricPath] = $subnet.PendingOffers
+                    }
+                }
+
                 $filterStopWatch.Stop()
 
                 Write-Verbose "Job Execution Time To Get to Clean Metrics: $($filterStopWatch.Elapsed.TotalSeconds) seconds."
 
+  
             }# End for each sample loop
         }# end if ExcludePerfCounters
 
