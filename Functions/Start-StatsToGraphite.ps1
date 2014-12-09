@@ -152,40 +152,63 @@ Function Start-StatsToGraphite
                     Write-Verbose "Filtering out Sample Name: $($samplePath) as it matches something in the filters."
                 }
 
+                # Only grab DHCP usage if there are Counters for DHCP in the config
                 if ($Config.Counters -match "DHCP") 
                 {
+                    # Empty placeholder for all subnets
                     $subnets = @()
 
+                    # Parse the mibinfo for all Subnets, grabbing the subnet address and the 3 lines of information
                     ForEach ( $match in netsh dhcp server show mibinfo | Select-String 'Subnet =' -Context 0,3 ) {
                         
+                        # Create a new Object for the subnet
                         $subnet = New-Object System.Object
+
+                        # Pull the subnet address from the match-info, trim it up, remove tailing '.', and changing it to underscores for Graphite
                         $name = $match.Line.ToString().Split("=").Trim()[1] -replace ".$" -replace "\.",'_'
+                        # Add it as a property to the object
                         $subnet | Add-Member -MemberType NoteProperty -Name Name -Value $name
                         
+                        # Pull the address in use count information from the match-info
                         $inuse = $match.Context | Select-Object -ExpandProperty PostContext | Select-String use
+                        # Pull the #, trim it up, cast into an int
                         $inuse = $inuse.ToString().Split("=").Trim()[1] -replace ".$" -as [int]
+                        # Add it as a property to the object
                         $subnet | Add-Member -MemberType NoteProperty -Name InUse -Value $inuse
                         
+                        # Pull the free address count information from the match-info
                         $free = $match.Context | Select-Object -ExpandProperty PostContext | Select-String free
+                        # Pull the #, trim it up, cast into an int
                         $free = $free.ToString().Split("=").Trim()[1] -replace ".$" -as [int]
+                        # Add it as a property to the object
                         $subnet | Add-Member -MemberType NoteProperty -Name Free -Value $free
                         
+                        # Pull the pending offers countinformation from the match-info
                         $offers = $match.Context | Select-Object -ExpandProperty PostContext | Select-String offers
+                        # Pull the #, trim it up, cast into an int
                         $offers = $offers.ToString().Split("=").Trim()[1] -replace ".$" -as [int]
+                        # Add it as a property to the object
                         $subnet | Add-Member -MemberType NoteProperty -Name PendingOffers -Value $offers
                         
+                        # Add the current subnet object to our placeholder
                         $subnets += $subnet
                     }
 
                     ForEach ( $subnet in $subnets ) {
                         
+                        # Manually construct the string for Graphite from our subnet Objects
                         $metricPath = $Config.MetricPath + '.' + $Config.NodeHostName.ToLower() + '.' + 'dhcpusage' + '.' + $subnet.Name + '.' + 'free'
+                        # Add it to the metrics to send
                         $metricsToSend[$metricPath] = $subnet.Free
                         
+                        # Manually construct the string for Graphite from our subnet Objects
                         $metricPath = $Config.MetricPath + '.' + $Config.NodeHostName.ToLower() + '.' + 'dhcpusage' + '.' + $subnet.Name + '.' + 'inuse'
+                        # Add it to the metrics to send
                         $metricsToSend[$metricPath] = $subnet.InUse
-                        
+
+                        # Manually construct the string for Graphite from our subnet Objects
                         $metricPath = $Config.MetricPath + '.' + $Config.NodeHostName.ToLower() + '.' + 'dhcpusage' + '.' + $subnet.Name + '.' + 'pendingoffers'
+                        # Add it to the metrics to send
                         $metricsToSend[$metricPath] = $subnet.PendingOffers
                     }
                 }
